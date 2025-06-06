@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日程調整アプリ</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; 
+      position: relative;
+      background-image: url('./img/world.png');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    table, th, td { border: 1px solid black; border-collapse: collapse; padding: 8px; }
+    th { background-color: #f0f0f0; }
+    input, select, button { margin: 5px; }
+    .answer-table td { text-align: center; }
+  </style>
+</head>
+<body>
+  <h2>ホスト：日程候補の追加</h2>
+  <input type="date" id="dateInput">
+  <input type="time" id="startTimeInput">
+  <input type="time" id="endTimeInput">
+  <input type="text" id="locationInput" placeholder="場所">
+  <button id="addScheduleButton" onclick="addSchedule()">日程を追加</button>
+  <button onclick="sortSchedules()">候補日時で並び替え</button>
+
+  <h3>日程一覧</h3>
+  <table id="scheduleTable">
+    <thead>
+      <tr>
+        <th>日付</th><th>開始</th><th>終了</th><th>場所</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="scheduleList"></tbody>
+  </table>
+
+  <h2>回答者：回答する</h2>
+  <input type="text" id="respondentName" placeholder="あなたの名前">
+  <div id="responseInputs"></div>
+  <button onclick="submitResponse()">回答を送信</button>
+  <button onclick="sortResponses()">回答者名で並び替え</button>
+
+  <h3>全体の回答状況</h3>
+  <div id="answerSummary"></div>
+
+  <script>
+    const scheduleKey = 'scheduleList';
+    const responseKey = 'responses';
+
+    function loadSchedules() {
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      renderSchedules(scheduleList);
+      generateResponseInputs(scheduleList);
+      updateAnswerSummary();
+    }
+
+    function renderSchedules(scheduleList) {
+      const tbody = document.getElementById('scheduleList');
+      tbody.innerHTML = '';
+      scheduleList.forEach((item, index) => {
+        const row = `
+          <tr>
+            <td>${item.date}</td>
+            <td>${item.start}</td>
+            <td>${item.end}</td>
+            <td>${item.location}</td>
+            <td>
+              <button onclick="editSchedule(${index})">編集</button>
+              <button onclick="deleteSchedule(${index})">削除</button>
+              <button onclick="copySchedule(${index})">コピー</button>
+              <button onclick="moveSchedule(${index}, -1)">↑</button>
+              <button onclick="moveSchedule(${index}, 1)">↓</button>
+            </td>
+          </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function addSchedule() {
+      const date = document.getElementById('dateInput').value;
+      const start = document.getElementById('startTimeInput').value;
+      const end = document.getElementById('endTimeInput').value;
+      const location = document.getElementById('locationInput').value;
+      if (!date || !start || !end || !location) return alert('すべての項目を入力してください。');
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const editIndex = document.getElementById('editIndex');
+      if (editIndex && editIndex.value !== '') {
+        scheduleList[editIndex.value] = { date, start, end, location };
+        editIndex.remove();
+      } else {
+        scheduleList.push({ date, start, end, location });
+      }
+      localStorage.setItem(scheduleKey, JSON.stringify(scheduleList));
+      clearInputs();
+      loadSchedules();
+    }
+
+    function clearInputs() {
+      document.getElementById('dateInput').value = '';
+      document.getElementById('startTimeInput').value = '';
+      document.getElementById('endTimeInput').value = '';
+      document.getElementById('locationInput').value = '';
+      document.getElementById('addScheduleButton').textContent = '日程を追加';
+    }
+
+    function editSchedule(index) {
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const item = scheduleList[index];
+      document.getElementById('dateInput').value = item.date;
+      document.getElementById('startTimeInput').value = item.start;
+      document.getElementById('endTimeInput').value = item.end;
+      document.getElementById('locationInput').value = item.location;
+      let editIndex = document.getElementById('editIndex');
+      if (!editIndex) {
+        editIndex = document.createElement('input');
+        editIndex.type = 'hidden';
+        editIndex.id = 'editIndex';
+        document.body.appendChild(editIndex);
+      }
+      editIndex.value = index;
+      document.getElementById('addScheduleButton').textContent = '日程を更新';
+    }
+
+    function deleteSchedule(index) {
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      scheduleList.splice(index, 1);
+      localStorage.setItem(scheduleKey, JSON.stringify(scheduleList));
+      loadSchedules();
+    }
+
+    function copySchedule(index) {
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const item = scheduleList[index];
+      scheduleList.push({ ...item });
+      localStorage.setItem(scheduleKey, JSON.stringify(scheduleList));
+      loadSchedules();
+    }
+
+    function moveSchedule(index, direction) {
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= scheduleList.length) return;
+      [scheduleList[index], scheduleList[targetIndex]] = [scheduleList[targetIndex], scheduleList[index]];
+      localStorage.setItem(scheduleKey, JSON.stringify(scheduleList));
+      loadSchedules();
+    }
+
+    function generateResponseInputs(scheduleList) {
+      const container = document.getElementById('responseInputs');
+      container.innerHTML = '';
+      scheduleList.forEach((item, index) => {
+        const label = `${item.date} ${item.start} - ${item.end} @${item.location}`;
+        container.innerHTML += `
+          <div>
+            <label>${label}</label>
+            <select id="response-${index}">
+              <option value="◯">◯</option>
+              <option value="△">△</option>
+              <option value="×">×</option>
+            </select>
+          </div>
+        `;
+      });
+    }
+
+    function submitResponse(editingIndex = null) {
+      const name = document.getElementById('respondentName').value.trim();
+      if (!name) return alert('名前を入力してください。');
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      const responseData = scheduleList.map((_, i) => document.getElementById(`response-${i}`).value);
+
+      if (editingIndex !== null) {
+        responses[editingIndex] = { name, responseData };
+      } else {
+        responses.push({ name, responseData });
+      }
+
+      localStorage.setItem(responseKey, JSON.stringify(responses));
+      document.getElementById('respondentName').value = '';
+      updateAnswerSummary();
+    }
+
+    function editResponse(index) {
+      const responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const res = responses[index];
+      document.getElementById('respondentName').value = res.name;
+      scheduleList.forEach((_, i) => {
+        const select = document.getElementById(`response-${i}`);
+        if (select) select.value = res.responseData[i];
+      });
+      const button = document.querySelector('button[onclick^="submitResponse"]');
+      button.setAttribute('onclick', `submitResponse(${index})`);
+    }
+
+    function deleteResponse(index) {
+      const responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      responses.splice(index, 1);
+      localStorage.setItem(responseKey, JSON.stringify(responses));
+      updateAnswerSummary();
+    }
+
+    function copyResponse(index) {
+      const responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      const item = responses[index];
+      responses.push({ ...item });
+      localStorage.setItem(responseKey, JSON.stringify(responses));
+      updateAnswerSummary();
+    }
+
+    function moveResponse(index, direction) {
+      const responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= responses.length) return;
+      [responses[index], responses[targetIndex]] = [responses[targetIndex], responses[index]];
+      localStorage.setItem(responseKey, JSON.stringify(responses));
+      updateAnswerSummary();
+    }
+
+    function updateAnswerSummary() {
+      const scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      const responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      const container = document.getElementById('answerSummary');
+      if (scheduleList.length === 0) return container.innerHTML = '<p>日程がまだありません。</p>';
+      let html = '<table class="answer-table"><tr><th>名前</th>';
+      scheduleList.forEach(item => {
+        html += `<th>${item.date}<br>${item.start}-${item.end}<br>@${item.location}</th>`;
+      });
+      html += '<th>操作</th></tr>';
+      responses.forEach((res, index) => {
+        html += `<tr><td>${res.name}</td>`;
+        res.responseData.forEach(r => html += `<td>${r}</td>`);
+        html += `<td>
+          <button onclick="editResponse(${index})">編集</button>
+          <button onclick="deleteResponse(${index})">削除</button>
+          <button onclick="copyResponse(${index})">コピー</button>
+          <button onclick="moveResponse(${index}, -1)">↑</button>
+          <button onclick="moveResponse(${index}, 1)">↓</button>
+        </td></tr>`;
+      });
+      html += '</table>';
+      container.innerHTML = html;
+    }
+
+    function sortSchedules() {
+      let scheduleList = JSON.parse(localStorage.getItem(scheduleKey) || '[]');
+      scheduleList.sort((a, b) => new Date(a.date + 'T' + a.start) - new Date(b.date + 'T' + b.start));
+      localStorage.setItem(scheduleKey, JSON.stringify(scheduleList));
+      loadSchedules();
+    }
+
+    function sortResponses() {
+      let responses = JSON.parse(localStorage.getItem(responseKey) || '[]');
+      responses.sort((a, b) => a.name.localeCompare(b.name));
+      localStorage.setItem(responseKey, JSON.stringify(responses));
+      updateAnswerSummary();
+    }
+
+    window.onload = loadSchedules;
+  </script>
+</body>
+</html>
